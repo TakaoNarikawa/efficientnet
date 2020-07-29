@@ -257,6 +257,7 @@ def EfficientNet(width_coefficient,
                  weights='imagenet',
                  input_tensor=None,
                  input_shape=None,
+                 seg_input_shape=None,
                  pooling=None,
                  classes=1000,
                  **kwargs):
@@ -317,14 +318,6 @@ def EfficientNet(width_coefficient,
         raise ValueError('If using `weights` as `"imagenet"` with `include_top`'
                          ' as true, `classes` should be 1000')
 
-    # Determine proper input shape
-    input_shape = _obtain_input_shape(input_shape,
-                                      default_size=default_resolution,
-                                      min_size=32,
-                                      data_format=backend.image_data_format(),
-                                      require_flatten=include_top,
-                                      weights=weights)
-
     if input_tensor is None:
         img_input = layers.Input(shape=input_shape)
     else:
@@ -337,6 +330,8 @@ def EfficientNet(width_coefficient,
         else:
             img_input = input_tensor
 
+    seg_input = layers.Input(shape=seg_input_shape, name="seg_input")
+
     bn_axis = 3 if backend.image_data_format() == 'channels_last' else 1
     activation = get_swish(**kwargs)
 
@@ -348,6 +343,7 @@ def EfficientNet(width_coefficient,
                       use_bias=False,
                       kernel_initializer=CONV_KERNEL_INITIALIZER,
                       name='stem_conv')(x)
+    x = layers.Add()([x, seg_input])
     x = layers.BatchNormalization(axis=bn_axis, name='stem_bn')(x)
     x = layers.Activation(activation, name='stem_activation')(x)
 
@@ -418,7 +414,7 @@ def EfficientNet(width_coefficient,
         inputs = img_input
 
     # Create model.
-    model = models.Model(inputs, x, name=model_name)
+    model = models.Model([inputs, seg_input], x, name=model_name)
 
     # Load weights.
     if weights == 'imagenet':
