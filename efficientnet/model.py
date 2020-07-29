@@ -31,6 +31,7 @@ import math
 import string
 import collections
 
+import tensorflow.keras as tfkeras
 from six.moves import xrange
 from keras_applications.imagenet_utils import _obtain_input_shape
 from keras_applications.imagenet_utils import preprocess_input as _preprocess_input
@@ -257,8 +258,8 @@ def EfficientNet(width_coefficient,
                  weights='imagenet',
                  input_tensor=None,
                  input_shape=None,
-                 seg_input_shape=None,
-                 seg_operator=None,
+                 attention_input_shape=None,
+                 attention_operator=None,
                  pooling=None,
                  classes=1000,
                  **kwargs):
@@ -331,26 +332,47 @@ def EfficientNet(width_coefficient,
         else:
             img_input = input_tensor
 
-    seg_input = layers.Input(shape=seg_input_shape, name="seg_input")
+    attention_input = layers.Input(shape=attention_input_shape, name="attention_input")
 
     bn_axis = 3 if backend.image_data_format() == 'channels_last' else 1
     activation = get_swish(**kwargs)
 
     # Build stem
+    first_layer_filter_num = round_filters(32, width_coefficient, depth_divisor)
     x = img_input
-    x = layers.Conv2D(round_filters(32, width_coefficient, depth_divisor), 3,
+    x = layers.Conv2D(first_layer_filter_num, 3,
                       strides=(2, 2),
                       padding='same',
                       use_bias=False,
                       kernel_initializer=CONV_KERNEL_INITIALIZER,
                       name='stem_conv')(x)
 
-    if   seg_operator == "add":
-        x = layers.Add()([x, seg_input])
-    elif seg_operator == "mul":
-        x = layers.Multiply()([x, seg_input])
+    if attention_operator == "add":
+        x_attention = attention_input
+        x_attention = layers.Conv2D(
+            first_layer_filter_num, 3,
+            strides=(1, 1),
+            padding='same',
+            use_bias=True,
+            kernel_initializer=tfkeras.initializers.Zeros(),
+            bias_initializer=tfkeras.initializers.Zeros(),
+            name="attention_map_conv"
+        )(x_attention)
+        x = layers.Add()([x, x_attention])
+    elif attention_operator == "mul":
+        x_attention = attention_input
+        x_attention = layers.Conv2D(
+            first_layer_filter_num, 3,
+            strides=(1, 1),
+            padding='same',
+            use_bias=True,
+            kernel_initializer=tfkeras.initializers.Zeros(),
+            bias_initializer=tfkeras.initializers.Ones(),
+            name="attention_map_conv"
+        )(x_attention)
+        x = layers.Multiply()([x, x_attention])
     else:
-        pass # not use segmentation
+        pass # not use attention map
 
     x = layers.BatchNormalization(axis=bn_axis, name='stem_bn')(x)
     x = layers.Activation(activation, name='stem_activation')(x)
@@ -422,7 +444,7 @@ def EfficientNet(width_coefficient,
         inputs = img_input
 
     # Create model.
-    model = models.Model([inputs, seg_input], x, name=model_name)
+    model = models.Model([inputs, attention_input], x, name=model_name)
 
     # Load weights.
     if weights == 'imagenet':
@@ -439,7 +461,7 @@ def EfficientNet(width_coefficient,
             cache_subdir='models',
             file_hash=file_hash,
         )
-        model.load_weights(weights_path)
+        model.load_weights(weights_path, by_name=True)
 
     elif weights == 'noisy-student':
 
@@ -455,10 +477,10 @@ def EfficientNet(width_coefficient,
             cache_subdir='models',
             file_hash=file_hash,
         )
-        model.load_weights(weights_path)
+        model.load_weights(weights_path, by_name=True)
 
     elif weights is not None:
-        model.load_weights(weights)
+        model.load_weights(weights, by_name=True)
 
     return model
 
