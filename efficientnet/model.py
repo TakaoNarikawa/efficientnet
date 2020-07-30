@@ -258,6 +258,7 @@ def EfficientNet(width_coefficient,
                  weights='imagenet',
                  input_tensor=None,
                  input_shape=None,
+                 attention_input_double=False,
                  attention_input_shape=None,
                  attention_operator=None,
                  pooling=None,
@@ -333,6 +334,8 @@ def EfficientNet(width_coefficient,
             img_input = input_tensor
 
     attention_input = layers.Input(shape=attention_input_shape, name="attention_input")
+    if attention_input_double:
+        attention_input2 = layers.Input(shape=attention_input_shape, name="attention_input_2")
 
     bn_axis = 3 if backend.image_data_format() == 'channels_last' else 1
     activation = get_swish(**kwargs)
@@ -347,32 +350,55 @@ def EfficientNet(width_coefficient,
                       kernel_initializer=CONV_KERNEL_INITIALIZER,
                       name='stem_conv')(x)
 
-    if attention_operator == "add":
-        x_attention = attention_input
-        x_attention = layers.Conv2D(
-            first_layer_filter_num, 3,
-            strides=(2, 2),
-            padding='same',
-            use_bias=True,
-            kernel_initializer=tfkeras.initializers.Zeros(),
-            bias_initializer=tfkeras.initializers.Zeros(),
-            name="attention_map_conv"
-        )(x_attention)
-        x = layers.Add()([x, x_attention])
-    elif attention_operator == "mul":
-        x_attention = attention_input
-        x_attention = layers.Conv2D(
+    if attention_input_double:
+        x_attention_1 = attention_input  # expected to be 1ch
+        x_attention_2 = attention_input2 # expected to be softmax
+
+        x_attention_1 = layers.Conv2D(
             first_layer_filter_num, 3,
             strides=(2, 2),
             padding='same',
             use_bias=True,
             kernel_initializer=tfkeras.initializers.Zeros(),
             bias_initializer=tfkeras.initializers.Ones(),
-            name="attention_map_conv"
-        )(x_attention)
-        x = layers.Multiply()([x, x_attention])
+            name="attention_map_conv_1ch"
+        )(x_attention_1)
+        x_attention_2 = layers.Conv2D(
+            first_layer_filter_num, 3,
+            strides=(2, 2),
+            padding='same',
+            use_bias=True,
+            kernel_initializer=tfkeras.initializers.Zeros(),
+            bias_initializer=tfkeras.initializers.Zeros(),
+            name="attention_map_conv_softmax"
+        )(x_attention_2)
+        x = layers.Multiply()([x, x_attention_1])
+        x = layers.Add()([x, x_attention_2])
     else:
-        pass # not use attention map
+        if attention_operator == "add":
+            x_attention = attention_input
+            x_attention = layers.Conv2D(
+                first_layer_filter_num, 3,
+                strides=(2, 2),
+                padding='same',
+                use_bias=True,
+                kernel_initializer=tfkeras.initializers.Zeros(),
+                bias_initializer=tfkeras.initializers.Zeros(),
+                name="attention_map_conv"
+            )(x_attention)
+            x = layers.Add()([x, x_attention])
+        elif attention_operator == "mul":
+            x_attention = attention_input
+            x_attention = layers.Conv2D(
+                first_layer_filter_num, 3,
+                strides=(2, 2),
+                padding='same',
+                use_bias=True,
+                kernel_initializer=tfkeras.initializers.Zeros(),
+                bias_initializer=tfkeras.initializers.Ones(),
+                name="attention_map_conv"
+            )(x_attention)
+            x = layers.Multiply()([x, x_attention])
 
     x = layers.BatchNormalization(axis=bn_axis, name='stem_bn')(x)
     x = layers.Activation(activation, name='stem_activation')(x)
@@ -444,7 +470,8 @@ def EfficientNet(width_coefficient,
         inputs = img_input
 
     # Create model.
-    model = models.Model([inputs, attention_input], x, name=model_name)
+    model = models.Model([inputs, attention_input], x, name=model_name) \
+        if not attention_input_double else models.Model([inputs, attention_input, attention_input2], x, name=model_name)
 
     # Load weights.
     if weights == 'imagenet':
