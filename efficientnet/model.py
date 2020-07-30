@@ -351,7 +351,7 @@ def EfficientNet(width_coefficient,
         x_attention = attention_input
         x_attention = layers.Conv2D(
             first_layer_filter_num, 3,
-            strides=(1, 1),
+            strides=(2, 2),
             padding='same',
             use_bias=True,
             kernel_initializer=tfkeras.initializers.Zeros(),
@@ -363,7 +363,7 @@ def EfficientNet(width_coefficient,
         x_attention = attention_input
         x_attention = layers.Conv2D(
             first_layer_filter_num, 3,
-            strides=(1, 1),
+            strides=(2, 2),
             padding='same',
             use_bias=True,
             kernel_initializer=tfkeras.initializers.Zeros(),
