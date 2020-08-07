@@ -470,8 +470,9 @@ def EfficientNet(width_coefficient,
         inputs = img_input
 
     # Create model.
-    model = models.Model([inputs, attention_input], x, name=model_name) \
-        if not attention_input_double else models.Model([inputs, attention_input, attention_input2], x, name=model_name)
+    model = models.Model([inputs, attention_input, attention_input2], x, name=model_name) \
+        if attention_input_double else models.Model([inputs, attention_input], x, name=model_name) \
+            if (attention_operator == 'add' or attention_operator == 'mul') else models.Model(inputs, x, name=model_name)
 
     # Load weights.
     if weights == 'imagenet':
